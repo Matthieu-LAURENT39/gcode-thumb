@@ -1,0 +1,9 @@
+[package]
+name = "gcode-thumbnailer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+# disable default features (alloc and serde) as we don't want them
+gcode = { version = "0.7.0", default-features = false }
