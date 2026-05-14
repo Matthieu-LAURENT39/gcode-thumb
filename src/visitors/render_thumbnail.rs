@@ -45,21 +45,118 @@ impl Default for PrinterState {
     }
 }
 
+/// A point in 3D space, in millimeters from the origin.
+#[derive(Debug, Copy, Clone)]
+struct Point3D {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+/// A line segment in 3D space, representing a movement of the printer head.
+#[derive(Debug, Copy, Clone)]
+struct Segment3D {
+    start: Point3D,
+    end: Point3D,
+    extruding: bool,
+}
+
+/// Maps a point in printer coordinates to SVG coordinates, given the bounding box and scale.
+#[inline]
+fn map_to_svg(point: Point3D, min_x: f32, max_y: f32, scale: f32, padding: f32) -> (f32, f32) {
+    let x = (point.x - min_x) * scale + padding;
+    let y = (max_y - point.y) * scale + padding;
+    (x, y)
+}
+
 /// Parses the G-code file and renders a thumbnail from it.
 pub(crate) struct RenderThumbnailVisitor {
     diagnostics: Noop,
     state: PrinterState,
+    segments: Vec<Segment3D>,
 }
 impl RenderThumbnailVisitor {
     pub fn new() -> Self {
         Self {
             diagnostics: Noop,
             state: PrinterState::default(),
+            segments: Vec::new(),
         }
     }
 
     pub fn render(&self) -> DynamicImage {
-        todo!("Add G-code rendering")
+        // Compute the bounding box of the print from the collected segments
+        let (min_x, max_x, min_y, max_y) = self.segments.iter().fold(
+            (
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+            ),
+            |acc, seg| {
+                let (mut min_x, mut max_x, mut min_y, mut max_y) = acc;
+                for p in [seg.start, seg.end] {
+                    min_x = min_x.min(p.x);
+                    max_x = max_x.max(p.x);
+                    min_y = min_y.min(p.y);
+                    max_y = max_y.max(p.y);
+                }
+                (min_x, max_x, min_y, max_y)
+            },
+        );
+
+        let width = (max_x - min_x).max(1.0);
+        let height = (max_y - min_y).max(1.0);
+
+        // TODO: Make that configurable
+        let target_size: u32 = 512;
+        let padding: f32 = 10.0;
+        let scale_x = (target_size as f32 - 2.0 * padding) / width;
+        let scale_y = (target_size as f32 - 2.0 * padding) / height;
+        let scale = scale_x.min(scale_y).max(0.01);
+
+        // TODO: Not sure String is the best fit here
+        let mut svg_out = String::new();
+        svg_out.push_str(&format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{0}' height='{0}' viewBox='0 0 {0} {0}'>",
+            target_size
+        ));
+        // Background
+        // TODO: make that configurable
+        svg_out.push_str("<rect width='100%' height='100%' fill='#ffffff'/>");
+
+        // Draw the segments as lines in the SVG
+        for seg in &self.segments {
+            let (x1, y1) = map_to_svg(seg.start, min_x, max_y, scale, padding);
+            let (x2, y2) = map_to_svg(seg.end, min_x, max_y, scale, padding);
+            let stroke = if seg.extruding { "#111111" } else { "#cccccc" };
+            svg_out.push_str(&format!(
+                "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{stroke}' stroke-width='1' stroke-linecap='round'/>"
+            ));
+        }
+
+        svg_out.push_str("</svg>");
+
+        // Render the SVG to a pixmap using resvg
+        let opt = resvg::usvg::Options::default();
+        // TODO: use anyhow to handle errors instead of panicking
+        let tree =
+            resvg::usvg::Tree::from_str(&svg_out, &opt).expect("Generated SVG should be valid");
+
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(target_size, target_size)
+            .expect("Failed to create pixmap for rendering");
+        resvg::render(
+            &tree,
+            resvg::tiny_skia::Transform::default(),
+            &mut pixmap.as_mut(),
+        );
+
+        // Convert the rendered pixmap to an image::DynamicImage
+        let image =
+            image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), pixmap.data().to_vec())
+                .expect("Failed to convert pixmap to image");
+
+        DynamicImage::ImageRgba8(image)
     }
 }
 impl HasDiagnostics for RenderThumbnailVisitor {
@@ -194,14 +291,37 @@ impl CommandVisitor for CommandVisitorImpl<'_> {
         match self.kind {
             CommandKind::Ignore => {}
             g_code @ (CommandKind::G0 | CommandKind::G1) => {
+                let old = self.parent.state;
+
+                let extruding = match self.parent.state.extrusion_mode {
+                    // In absolute extrusion mode, we're extruding if the E value is strictly greater than the current E position
+                    PositionMode::Absolute => self.args.e.is_some_and(|e| e > self.parent.state.e),
+                    // In relative extrusion mode, we're extruding if the E value is strictly greater than 0
+                    PositionMode::Relative => self.args.e.is_some_and(|e| e > 0.0),
+                };
+
                 let state = &mut self.parent.state;
-
-                let old = *state;
-
                 state.x = apply_axis(state.x, self.args.x, state.distance_mode);
                 state.y = apply_axis(state.y, self.args.y, state.distance_mode);
                 state.z = apply_axis(state.z, self.args.z, state.distance_mode);
                 state.e = apply_axis(state.e, self.args.e, state.extrusion_mode);
+
+                // Only add a segment if we're extruding
+                if extruding {
+                    self.parent.segments.push(Segment3D {
+                        start: Point3D {
+                            x: old.x,
+                            y: old.y,
+                            z: old.z,
+                        },
+                        end: Point3D {
+                            x: state.x,
+                            y: state.y,
+                            z: state.z,
+                        },
+                        extruding,
+                    });
+                }
 
                 let delta_e = state.e - old.e;
                 trace!(
@@ -278,16 +398,6 @@ impl<'a> CommandVisitorImpl<'a> {
             parent,
             kind,
             args: CommandArgs::default(),
-        }
-    }
-
-    // Determines if the current command is an extruding move based on the E argument
-    fn is_extruding(&self) -> bool {
-        match self.parent.state.extrusion_mode {
-            // In absolute extrusion mode, we're extruding if the E value is strictly greater than the current E position
-            PositionMode::Absolute => self.args.e.is_some_and(|e| e > self.parent.state.e),
-            // In relative extrusion mode, we're extruding if the E value is strictly greater than 0
-            PositionMode::Relative => self.args.e.is_some_and(|e| e > 0.0),
         }
     }
 }
