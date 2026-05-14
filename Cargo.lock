@@ -162,6 +162,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "ere"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ced253a70c1159bac921dc672edbb5530c35fbca23a7f1b9f03641f39e4172f1"
+dependencies = [
+ "ere-core",
+ "ere-macros",
+]
+
+[[package]]
+name = "ere-core"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6639aa08d01ec59ec0509e9b79b4e17b953131b053d1a9a6b449150e58c9706d"
+dependencies = [
+ "proc-macro2 1.0.106",
+ "quote 1.0.45",
+ "syn",
+ "thiserror",
+ "utf8-ranges",
+]
+
+[[package]]
+name = "ere-macros"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9a41368e568caa1ee19d8dfa943d7f2f3ddabc0d9c0965cc37d76e0146c6b89"
+dependencies = [
+ "ere-core",
+ "quote 1.0.45",
+ "syn",
+]
+
+[[package]]
 name = "gcode"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -180,6 +214,7 @@ dependencies = [
  "base64",
  "clap",
  "env_logger",
+ "ere",
  "gcode",
  "log",
 ]
@@ -368,6 +403,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "thiserror"
+version = "2.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
+dependencies = [
+ "proc-macro2 1.0.106",
+ "quote 1.0.45",
+ "syn",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -378,6 +433,12 @@ name = "unicode-xid"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc72304796d0818e357ead4e000d19c9c174ab23dc11093ac919054d20a6a7fc"
+
+[[package]]
+name = "utf8-ranges"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcfc827f90e53a02eaef5e535ee14266c1d569214c6aa70133a624d8a3164ba"
 
 [[package]]
 name = "utf8parse"

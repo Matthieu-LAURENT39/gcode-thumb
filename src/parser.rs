@@ -1,5 +1,6 @@
 use std::hint::cold_path;
 
+use ere::{Regex, compile_regex};
 use gcode::core::{
     BlockVisitor, CommandVisitor, ControlFlow, Diagnostics, HasDiagnostics, Noop, Number,
     ProgramVisitor, Span,
@@ -63,20 +64,21 @@ impl HasDiagnostics for BlockVisitorImpl<'_> {
 }
 impl BlockVisitor for BlockVisitorImpl<'_> {
     fn comment(&mut self, value: &str, _span: Span) {
+        // TODO: use named capture groups and non-capturing groups
+        // This is waiting on https://github.com/2kai2kai2/ere/issues/2
+        const BEGING_REGEX: Regex<6> =
+            compile_regex!(r"(thumbnail|png) begin ([0-9]+)(x|\*)([0-9]+) ([0-9]+)");
+        const END_REGEX: Regex<2> = compile_regex!(r"(thumbnail|png) end");
+
         trace!("Comment: {value}");
 
         // Remove the leading "; "
         let comment_content = value.trim_start_matches(|c: char| c == ';' || c.is_whitespace());
 
         // Check for the thumbnail begin section
-        if let Some(thumb_meta) = comment_content.strip_prefix("thumbnail begin ")
-            && let Some((dims, size_str)) = thumb_meta.split_once(' ')
-            && let Some((width_str, height_str)) = dims.split_once('x')
-            && let (Ok(width), Ok(height), Ok(_size)) = (
-                width_str.parse::<u32>(),
-                height_str.parse::<u32>(),
-                size_str.parse::<u32>(),
-            )
+        if let Some([_, _, Some(width_str), _, Some(height_str), _]) =
+            BEGING_REGEX.exec(comment_content)
+            && let (Ok(width), Ok(height)) = (width_str.parse::<u32>(), height_str.parse::<u32>())
         {
             if self.parent.current_thumbnail.is_some() {
                 cold_path();
@@ -85,10 +87,10 @@ impl BlockVisitor for BlockVisitorImpl<'_> {
                 );
             }
             self.parent.current_thumbnail = Some((width, height, String::new()));
-            debug!("Found thumbnail block: {width}x{height} (size {size_str})");
+            debug!("Found thumbnail block: {width}x{height}");
         }
         // Check for the thumbnail end section
-        else if comment_content == "thumbnail end" {
+        else if let Some([_, _]) = END_REGEX.exec(comment_content) {
             if let Some((width, height, data)) = self.parent.current_thumbnail.take() {
                 let thumbnail = Thumbnail {
                     width,
