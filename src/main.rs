@@ -4,7 +4,7 @@ use log::error;
 use std::fs;
 use std::path::Path;
 
-mod parser;
+mod visitors;
 
 #[derive(Parser)]
 #[command(about = "Generate thumbnails from G-code files", long_about = None)]
@@ -28,7 +28,7 @@ fn main() {
     let content = fs::read_to_string(&file_path).expect("Failed to read file");
 
     // Visit the G-code file
-    let mut visitor = parser::ProgramVisitorImpl::new();
+    let mut visitor = visitors::embedded_thumbnail::EmbeddedThumbnailVisitor::new();
     gcode::core::parse(&content, &mut visitor);
 
     // Find the largest embedded thumbnail

@@ -15,16 +15,15 @@ pub(crate) struct Thumbnail {
     pub data: String,
 }
 
-/// Program visitor implementation.
 /// Tracks thumbnails found in comments and selects the largest one.
-pub(crate) struct ProgramVisitorImpl {
+pub(crate) struct EmbeddedThumbnailVisitor {
     diagnostics: Noop,
     /// The highest quality thumbnail found so far, if any
     best_thumbnail: Option<Thumbnail>,
     /// The thumbnail that is currently being parsed, if any
     current_thumbnail: Option<(u32, u32, String)>, // (width, height, data)
 }
-impl ProgramVisitorImpl {
+impl EmbeddedThumbnailVisitor {
     pub fn new() -> Self {
         Self {
             diagnostics: Noop,
@@ -38,12 +37,12 @@ impl ProgramVisitorImpl {
         self.best_thumbnail.as_ref()
     }
 }
-impl HasDiagnostics for ProgramVisitorImpl {
+impl HasDiagnostics for EmbeddedThumbnailVisitor {
     fn diagnostics(&mut self) -> &mut dyn Diagnostics {
         &mut self.diagnostics
     }
 }
-impl ProgramVisitor for ProgramVisitorImpl {
+impl ProgramVisitor for EmbeddedThumbnailVisitor {
     fn start_block(&mut self) -> ControlFlow<impl BlockVisitor + '_> {
         ControlFlow::Continue(BlockVisitorImpl {
             diagnostics: Noop,
@@ -55,7 +54,7 @@ impl ProgramVisitor for ProgramVisitorImpl {
 /// Block visitor implementation.
 struct BlockVisitorImpl<'a> {
     diagnostics: Noop,
-    parent: &'a mut ProgramVisitorImpl,
+    parent: &'a mut EmbeddedThumbnailVisitor,
 }
 impl HasDiagnostics for BlockVisitorImpl<'_> {
     fn diagnostics(&mut self) -> &mut dyn Diagnostics {
