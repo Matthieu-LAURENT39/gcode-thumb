@@ -2,6 +2,7 @@ use gcode::core::{
     BlockVisitor, CommandVisitor, ControlFlow, Diagnostics, HasDiagnostics, Noop, Number,
     ProgramVisitor,
 };
+use image::DynamicImage;
 use log::{debug, trace};
 
 /// Parses the G-code file and renders a thumbnail from it.
@@ -11,6 +12,10 @@ pub(crate) struct RenderThumbnailVisitor {
 impl RenderThumbnailVisitor {
     pub fn new() -> Self {
         Self { diagnostics: Noop }
+    }
+
+    pub fn render(&self) -> DynamicImage {
+        todo!("Add G-code rendering")
     }
 }
 impl HasDiagnostics for RenderThumbnailVisitor {
