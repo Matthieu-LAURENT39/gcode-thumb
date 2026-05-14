@@ -1,3 +1,5 @@
+use std::hint::cold_path;
+
 use gcode::core::{
     BlockVisitor, CommandVisitor, ControlFlow, Diagnostics, HasDiagnostics, Noop, Number,
     ProgramVisitor, Span,
@@ -76,6 +78,12 @@ impl BlockVisitor for BlockVisitorImpl<'_> {
                 size_str.parse::<u32>(),
             )
         {
+            if self.parent.current_thumbnail.is_some() {
+                cold_path();
+                warn!(
+                    "Found `thumbnail begin` while already parsing a thumbnail, overwriting previous thumbnail"
+                );
+            }
             self.parent.current_thumbnail = Some((width, height, String::new()));
             debug!("Found thumbnail block: {width}x{height} (size {size_str})");
         }
@@ -101,6 +109,7 @@ impl BlockVisitor for BlockVisitorImpl<'_> {
                     debug!("Updated best thumbnail to {width}x{height}");
                 }
             } else {
+                cold_path();
                 warn!("Found `thumbnail end` without a prior `thumbnail begin`");
             }
         }
