@@ -61,11 +61,34 @@ struct Segment3D {
     extruding: bool,
 }
 
-/// Maps a point in printer coordinates to SVG coordinates, given the bounding box and scale.
+/// Projects a 3D point into 2D for a 3/4 view from above.
 #[inline]
-fn map_to_svg(point: Point3D, min_x: f32, max_y: f32, scale: f32, padding: f32) -> (f32, f32) {
-    let x = (point.x - min_x) * scale + padding;
-    let y = (max_y - point.y) * scale + padding;
+fn project_point(point: Point3D) -> (f32, f32) {
+    // Basic isometric projection
+    const YAW: f32 = 45.0_f32.to_radians();
+    const PITCH: f32 = 30.0_f32.to_radians();
+    const Z_SCALE: f32 = 0.7_f32;
+
+    // Sadly this cant be const yet
+    // TODO: maybe still cache it? Not sure if it would actually be a perf
+    // improvement though, try it and benchmark it before deciding
+    let (sin_yaw, cos_yaw) = YAW.sin_cos();
+    let (sin_pitch, cos_pitch) = PITCH.sin_cos();
+
+    let x1 = point.x * cos_yaw - point.y * sin_yaw;
+    let y1 = point.x * sin_yaw + point.y * cos_yaw;
+    let z1 = point.z * Z_SCALE;
+
+    let y2 = y1 * cos_pitch - z1 * sin_pitch;
+
+    (x1, -y2)
+}
+
+/// Maps a 2D point in printer coordinates to SVG coordinates, given the bounding box and scale.
+#[inline]
+fn map_to_svg(point: (f32, f32), min_x: f32, max_y: f32, scale: f32, padding: f32) -> (f32, f32) {
+    let x = (point.0 - min_x) * scale + padding;
+    let y = (max_y - point.1) * scale + padding;
     (x, y)
 }
 
@@ -87,7 +110,7 @@ impl RenderThumbnailVisitor {
     }
 
     pub fn render(&self) -> DynamicImage {
-        // Compute the bounding box of the print from the collected segments
+        // Compute the bounding box of the projected print from the collected segments
         let (min_x, max_x, min_y, max_y) = self.segments.iter().fold(
             (
                 f32::INFINITY,
@@ -98,10 +121,11 @@ impl RenderThumbnailVisitor {
             |acc, seg| {
                 let (mut min_x, mut max_x, mut min_y, mut max_y) = acc;
                 for p in [seg.start, seg.end] {
-                    min_x = min_x.min(p.x);
-                    max_x = max_x.max(p.x);
-                    min_y = min_y.min(p.y);
-                    max_y = max_y.max(p.y);
+                    let (px, py) = project_point(p);
+                    min_x = min_x.min(px);
+                    max_x = max_x.max(px);
+                    min_y = min_y.min(py);
+                    max_y = max_y.max(py);
                 }
                 (min_x, max_x, min_y, max_y)
             },
@@ -129,8 +153,8 @@ impl RenderThumbnailVisitor {
 
         // Draw the segments as lines in the SVG
         for seg in &self.segments {
-            let (x1, y1) = map_to_svg(seg.start, min_x, max_y, scale, padding);
-            let (x2, y2) = map_to_svg(seg.end, min_x, max_y, scale, padding);
+            let (x1, y1) = map_to_svg(project_point(seg.start), min_x, max_y, scale, padding);
+            let (x2, y2) = map_to_svg(project_point(seg.end), min_x, max_y, scale, padding);
             let stroke = if seg.extruding { "#111111" } else { "#cccccc" };
             svg_out.push_str(&format!(
                 "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{stroke}' stroke-width='1' stroke-linecap='round'/>"
