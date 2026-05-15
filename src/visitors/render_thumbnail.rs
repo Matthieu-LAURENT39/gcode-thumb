@@ -58,7 +58,6 @@ struct Point3D {
 struct Segment3D {
     start: Point3D,
     end: Point3D,
-    extruding: bool,
 }
 
 /// Projects a 3D point into 2D for a 3/4 view from above.
@@ -92,6 +91,12 @@ fn map_to_svg(point: (f32, f32), min_x: f32, max_y: f32, scale: f32, padding: f3
     (x, y)
 }
 
+/// Linear interpolation between a and b by t (0.0 to 1.0)
+#[inline]
+const fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
 /// Parses the G-code file and renders a thumbnail from it.
 pub(crate) struct RenderThumbnailVisitor {
     diagnostics: Noop,
@@ -110,24 +115,38 @@ impl RenderThumbnailVisitor {
     }
 
     pub fn render(&self) -> DynamicImage {
+        /// The target size for the thumbnail, in pixels.
+        /// The rendered image will be a square of this size.
+        const TARGET_SIZE: u32 = 512;
+        /// Padding to apply around the model in the thumbnail, in pixels.
+        const PADDING: f32 = 10.0;
+        /// The shade of the lines for the lowest and highest points of the
+        /// model respectively, in 0-255 grayscale.
+        const SHADE_LOW: f32 = 130.0;
+        const SHADE_HIGH: f32 = 25.0;
+
         // Compute the bounding box of the projected print from the collected segments
-        let (min_x, max_x, min_y, max_y) = self.segments.iter().fold(
+        let (min_x, max_x, min_y, max_y, min_z, max_z) = self.segments.iter().fold(
             (
+                f32::INFINITY,
+                f32::NEG_INFINITY,
                 f32::INFINITY,
                 f32::NEG_INFINITY,
                 f32::INFINITY,
                 f32::NEG_INFINITY,
             ),
             |acc, seg| {
-                let (mut min_x, mut max_x, mut min_y, mut max_y) = acc;
+                let (mut min_x, mut max_x, mut min_y, mut max_y, mut min_z, mut max_z) = acc;
                 for p in [seg.start, seg.end] {
                     let (px, py) = project_point(p);
                     min_x = min_x.min(px);
                     max_x = max_x.max(px);
                     min_y = min_y.min(py);
                     max_y = max_y.max(py);
+                    min_z = min_z.min(p.z);
+                    max_z = max_z.max(p.z);
                 }
-                (min_x, max_x, min_y, max_y)
+                (min_x, max_x, min_y, max_y, min_z, max_z)
             },
         );
 
@@ -135,27 +154,29 @@ impl RenderThumbnailVisitor {
         let height = (max_y - min_y).max(1.0);
 
         // TODO: Make that configurable
-        let target_size: u32 = 512;
-        let padding: f32 = 10.0;
-        let scale_x = (target_size as f32 - 2.0 * padding) / width;
-        let scale_y = (target_size as f32 - 2.0 * padding) / height;
-        let scale = scale_x.min(scale_y).max(0.01);
+        let scale_x = (TARGET_SIZE as f32 - 2.0 * PADDING) / width;
+        let scale_y = (TARGET_SIZE as f32 - 2.0 * PADDING) / height;
+        let scale = scale_x.min(scale_y);
 
         // TODO: Not sure String is the best fit here
         let mut svg_out = String::new();
         svg_out.push_str(&format!(
             "<svg xmlns='http://www.w3.org/2000/svg' width='{0}' height='{0}' viewBox='0 0 {0} {0}'>",
-            target_size
+            TARGET_SIZE
         ));
         // Background
         // TODO: make that configurable
         svg_out.push_str("<rect width='100%' height='100%' fill='#ffffff'/>");
 
         // Draw the segments as lines in the SVG
+        let z_range = max_z - min_z;
         for seg in &self.segments {
-            let (x1, y1) = map_to_svg(project_point(seg.start), min_x, max_y, scale, padding);
-            let (x2, y2) = map_to_svg(project_point(seg.end), min_x, max_y, scale, padding);
-            let stroke = if seg.extruding { "#111111" } else { "#cccccc" };
+            let (x1, y1) = map_to_svg(project_point(seg.start), min_x, max_y, scale, PADDING);
+            let (x2, y2) = map_to_svg(project_point(seg.end), min_x, max_y, scale, PADDING);
+            let z_mid = (seg.start.z + seg.end.z) * 0.5;
+            let t = ((z_mid - min_z) / z_range).clamp(0.0, 1.0);
+            let shade = lerp(SHADE_LOW, SHADE_HIGH, t).round() as u8;
+            let stroke = format!("#{0:02x}{0:02x}{0:02x}", shade);
             svg_out.push_str(&format!(
                 "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{stroke}' stroke-width='1' stroke-linecap='round'/>"
             ));
@@ -169,7 +190,7 @@ impl RenderThumbnailVisitor {
         let tree =
             resvg::usvg::Tree::from_str(&svg_out, &opt).expect("Generated SVG should be valid");
 
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(target_size, target_size)
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(TARGET_SIZE, TARGET_SIZE)
             .expect("Failed to create pixmap for rendering");
         resvg::render(
             &tree,
@@ -364,7 +385,6 @@ impl CommandVisitor for CommandVisitorImpl<'_> {
                             y: state.y,
                             z: state.z,
                         },
-                        extruding,
                     });
                 }
 
