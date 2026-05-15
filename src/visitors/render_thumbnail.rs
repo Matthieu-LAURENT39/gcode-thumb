@@ -64,9 +64,9 @@ struct Segment3D {
 #[inline]
 fn project_point(point: Point3D) -> (f32, f32) {
     // Basic isometric projection
-    const YAW: f32 = 45.0_f32.to_radians();
-    const PITCH: f32 = 30.0_f32.to_radians();
-    const Z_SCALE: f32 = 0.7_f32;
+    const YAW: f32 = -40.0_f32.to_radians();
+    const PITCH: f32 = 45.0_f32.to_radians();
+    const Z_SCALE: f32 = 1.1_f32;
 
     // Sadly this cant be const yet
     // TODO: maybe still cache it? Not sure if it would actually be a perf
