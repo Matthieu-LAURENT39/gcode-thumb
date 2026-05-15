@@ -3,7 +3,7 @@ use gcode::core::{
     ProgramVisitor, Span, Value,
 };
 use image::DynamicImage;
-use log::trace;
+use log::{debug, trace};
 
 /// Mode for interpreting coordinates
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -74,13 +74,15 @@ pub(crate) struct RenderThumbnailVisitor {
     diagnostics: Noop,
     state: PrinterState,
     segments: Vec<Segment3D>,
+    ignore_priming_line: bool,
 }
 impl RenderThumbnailVisitor {
-    pub fn new() -> Self {
+    pub fn new(ignore_priming_line: bool) -> Self {
         Self {
             diagnostics: Noop,
             state: PrinterState::default(),
             segments: Vec::new(),
+            ignore_priming_line,
         }
     }
 
@@ -208,6 +210,25 @@ impl HasDiagnostics for BlockVisitorImpl<'_> {
     }
 }
 impl BlockVisitor for BlockVisitorImpl<'_> {
+    fn comment(&mut self, value: &str, _span: Span) {
+        if !self.parent.ignore_priming_line {
+            return;
+        }
+
+        // Remove the leading "; "
+        let comment_content = value.trim_start_matches(|c: char| c == ';' || c.is_whitespace());
+
+        if comment_content == "LAYER:0" // Cura Slicer
+        // Orca Slicer
+        || comment_content == "Filament gcode"
+        {
+            self.parent.segments.clear();
+            // We found the priming line marker, we can stop handling comments now
+            self.parent.ignore_priming_line = false;
+            debug!("Found start of print, cleared prior segments to ignore the priming line");
+        }
+    }
+
     fn start_general_code(&mut self, number: Number) -> ControlFlow<impl CommandVisitor + '_> {
         match number.major() {
             // G0: Coordinated Motion at Rapid Rate

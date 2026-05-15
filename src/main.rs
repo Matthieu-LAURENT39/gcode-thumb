@@ -1,5 +1,5 @@
 use base64::Engine;
-use clap::{Parser, ValueEnum, ValueHint};
+use clap::{ArgAction, Parser, ValueEnum, ValueHint};
 use image::ImageReader;
 use log::error;
 use std::fs;
@@ -16,12 +16,23 @@ struct Args {
     /// Path to save the extracted thumbnail (in PNG format)
     #[arg(long, short)]
     output: String,
+
     /// Thumbnail source: embedded, generate, auto
     /// - embedded: only use embedded thumbnails, fail if none found
     /// - generate: only generate thumbnails from G-code, ignore embedded ones
     /// - auto: use embedded thumbnails if found, otherwise generate from G-code
     #[arg(long, short, value_enum, default_value = "auto")]
     source: Source,
+
+    // TODO: it'd be nice to have the positive version of this flag too, but
+    // it's hard to do until https://github.com/clap-rs/clap/issues/815 is fixed
+    /// Ignore priming-line for thumbnail generation.
+    #[arg(
+        long = "no-ignore-priming-line",
+        action = ArgAction::SetFalse,
+        default_value_t = true
+    )]
+    ignore_priming_line: bool,
 }
 
 /// The source to control which thumbnails to use.
@@ -77,7 +88,8 @@ fn main() {
             }
         }
         Source::Generate => {
-            let mut render_visitor = visitors::render_thumbnail::RenderThumbnailVisitor::new();
+            let mut render_visitor =
+                visitors::render_thumbnail::RenderThumbnailVisitor::new(args.ignore_priming_line);
             gcode::core::parse(&content, &mut render_visitor);
             render_visitor.render()
         }
@@ -85,7 +97,9 @@ fn main() {
             if let Some(thumbnail) = embedded_thumbnail {
                 thumbnail
             } else {
-                let mut render_visitor = visitors::render_thumbnail::RenderThumbnailVisitor::new();
+                let mut render_visitor = visitors::render_thumbnail::RenderThumbnailVisitor::new(
+                    args.ignore_priming_line,
+                );
                 gcode::core::parse(&content, &mut render_visitor);
                 render_visitor.render()
             }
