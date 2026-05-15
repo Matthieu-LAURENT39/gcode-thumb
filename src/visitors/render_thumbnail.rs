@@ -122,8 +122,8 @@ impl RenderThumbnailVisitor {
         const PADDING: f32 = 10.0;
         /// The shade of the lines for the lowest and highest points of the
         /// model respectively, in 0-255 grayscale.
-        const SHADE_LOW: f32 = 130.0;
-        const SHADE_HIGH: f32 = 25.0;
+        const SHADE_LOW: f32 = 220.0;
+        const SHADE_HIGH: f32 = 255.0;
 
         // Compute the bounding box of the projected print from the collected segments
         let (min_x, max_x, min_y, max_y, min_z, max_z) = self.segments.iter().fold(
@@ -166,7 +166,7 @@ impl RenderThumbnailVisitor {
         ));
         // Background
         // TODO: make that configurable
-        svg_out.push_str("<rect width='100%' height='100%' fill='#ffffff'/>");
+        svg_out.push_str("<rect width='100%' height='100%' fill='#000000'/>");
 
         // Draw the segments as lines in the SVG
         let z_range = max_z - min_z;
