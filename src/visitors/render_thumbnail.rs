@@ -1,3 +1,4 @@
+use anyhow::Context;
 use gcode::core::{
     BlockVisitor, CommandVisitor, ControlFlow, Diagnostics, HasDiagnostics, Noop, Number,
     ProgramVisitor, Span, Value,
@@ -108,7 +109,7 @@ impl RenderThumbnailVisitor {
         }
     }
 
-    pub fn render(&self, background: &str, size: u32) -> DynamicImage {
+    pub fn render(&self, background: &str, size: u32) -> anyhow::Result<DynamicImage> {
         /// Padding to apply around the model in the thumbnail, in pixels.
         const PADDING: f32 = 10.0;
         /// Color for the model lines.
@@ -182,12 +183,12 @@ impl RenderThumbnailVisitor {
 
         // Render the SVG to a pixmap using resvg
         let opt = resvg::usvg::Options::default();
-        // TODO: use anyhow to handle errors instead of panicking
-        let tree =
-            resvg::usvg::Tree::from_str(&svg_out, &opt).expect("Generated SVG should be valid");
+        let tree = resvg::usvg::Tree::from_str(&svg_out, &opt).context(
+            "Generated SVG is invalid. This should not happen, please report this as a bug.",
+        )?;
 
         let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
-            .expect("Failed to create pixmap for rendering");
+            .context("Failed to create pixmap for rendering. This should not happen, please report this as a bug.")?;
         resvg::render(
             &tree,
             resvg::tiny_skia::Transform::default(),
@@ -197,9 +198,9 @@ impl RenderThumbnailVisitor {
         // Convert the rendered pixmap to an image::DynamicImage
         let image =
             image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), pixmap.data().to_vec())
-                .expect("Failed to convert pixmap to image");
+                .context("Failed to convert pixmap to image. This should not happen, please report this as a bug.")?;
 
-        DynamicImage::ImageRgba8(image)
+        Ok(DynamicImage::ImageRgba8(image))
     }
 }
 impl HasDiagnostics for RenderThumbnailVisitor {

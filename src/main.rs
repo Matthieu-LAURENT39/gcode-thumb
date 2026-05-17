@@ -1,9 +1,8 @@
+use anyhow::{Context, bail};
 use base64::Engine;
 use clap::{ArgAction, Parser, ValueEnum, ValueHint};
 use image::{ImageReader, imageops::FilterType};
-use log::error;
 use std::fs;
-use std::process::exit;
 
 mod visitors;
 
@@ -65,7 +64,7 @@ enum Source {
     Auto,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
@@ -73,35 +72,36 @@ fn main() {
     let args = Args::parse();
     let file_path = args.file;
     let size = args.size;
-    // TODO: use anyhow to handle errors instead of panicking
-    let content = fs::read_to_string(&file_path).expect("Failed to read file");
+    let content = fs::read_to_string(&file_path)
+        .with_context(|| format!("Failed to read file: {file_path}"))?;
 
     // Try to get an embedded thumbnail, if the source allows them
     let embedded_thumbnail = if matches!(args.source, Source::Embedded | Source::Auto) {
         let mut embedded_visitor = visitors::embedded_thumbnail::EmbeddedThumbnailVisitor::new();
         gcode::core::parse(&content, &mut embedded_visitor);
         let embedded_thumbnail = embedded_visitor.get_best_thumbnail();
-        embedded_thumbnail.map(|thumbnail| {
-            println!(
-                "Found embedded thumbnail: {}x{}",
-                thumbnail.width, thumbnail.height
-            );
-            let reader = ImageReader::new(std::io::Cursor::new(
-                // Decode the base64 data
-                base64::engine::general_purpose::STANDARD
-                    .decode(&thumbnail.data)
-                    // TODO: use anyhow to handle errors instead of panicking
-                    .expect("Failed to decode the thumbnail"),
-            ))
-            .with_guessed_format()
-            .expect("Failed to guess image format");
-            let image = reader.decode().expect("Failed to decode image");
-            if image.width() > size || image.height() > size {
-                image.resize(size, size, FilterType::Triangle)
-            } else {
-                image
-            }
-        })
+        embedded_thumbnail
+            .map(|thumbnail| -> anyhow::Result<_> {
+                println!(
+                    "Found embedded thumbnail: {}x{}",
+                    thumbnail.width, thumbnail.height
+                );
+                let reader = ImageReader::new(std::io::Cursor::new(
+                    // Decode the base64 data
+                    base64::engine::general_purpose::STANDARD
+                        .decode(&thumbnail.data)
+                        .context("Failed to decode embedded thumbnail base64")?,
+                ))
+                .with_guessed_format()
+                .context("Failed to guess embedded image format")?;
+                let image = reader.decode().context("Failed to decode embedded image")?;
+                if image.width() > size || image.height() > size {
+                    Ok(image.resize(size, size, FilterType::Triangle))
+                } else {
+                    Ok(image)
+                }
+            })
+            .transpose()?
     } else {
         None
     };
@@ -111,15 +111,14 @@ fn main() {
             if let Some(thumbnail) = embedded_thumbnail {
                 thumbnail
             } else {
-                error!("No embedded thumbnail found in the G-code file");
-                exit(1);
+                bail!("No embedded thumbnail found in the G-code file");
             }
         }
         Source::Generate => {
             let mut render_visitor =
                 visitors::render_thumbnail::RenderThumbnailVisitor::new(args.ignore_priming_line);
             gcode::core::parse(&content, &mut render_visitor);
-            render_visitor.render(&args.background, args.size)
+            render_visitor.render(&args.background, args.size)?
         }
         Source::Auto => {
             if let Some(thumbnail) = embedded_thumbnail {
@@ -129,7 +128,7 @@ fn main() {
                     args.ignore_priming_line,
                 );
                 gcode::core::parse(&content, &mut render_visitor);
-                render_visitor.render(&args.background, args.size)
+                render_visitor.render(&args.background, args.size)?
             }
         }
     };
@@ -137,6 +136,7 @@ fn main() {
     // Save the thumbnail to the output path
     thumbnail
         .save(&args.output)
-        // TODO: use anyhow to handle errors instead of panicking
-        .expect("Failed to save thumbnail");
+        .with_context(|| format!("Failed to save thumbnail to {}", args.output))?;
+
+    Ok(())
 }
