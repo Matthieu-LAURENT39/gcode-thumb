@@ -91,12 +91,6 @@ fn map_to_svg(point: (f32, f32), min_x: f32, max_y: f32, scale: f32, padding: f3
     (x, y)
 }
 
-/// Linear interpolation between a and b by t (0.0 to 1.0)
-#[inline]
-const fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
 /// Parses the G-code file and renders a thumbnail from it.
 pub(crate) struct RenderThumbnailVisitor {
     diagnostics: Noop,
@@ -120,33 +114,36 @@ impl RenderThumbnailVisitor {
         const TARGET_SIZE: u32 = 512;
         /// Padding to apply around the model in the thumbnail, in pixels.
         const PADDING: f32 = 10.0;
-        /// The shade of the lines for the lowest and highest points of the
-        /// model respectively, in 0-255 grayscale.
-        const SHADE_LOW: f32 = 220.0;
-        const SHADE_HIGH: f32 = 255.0;
+        /// Color for the model lines.
+        const MODEL_COLOR: &str = "#ffffff";
+
+        /// Shadow lines, to help with depth perception.
+        /// They have an offset and a thicker stroke, and are slightly transparent.
+        // Offset the shadow to the down-left
+        const SHADOW_OFFSET_X: f32 = -4.0;
+        const SHADOW_OFFSET_Y: f32 = 5.0;
+        const SHADOW_STROKE_SIZE: f32 = 1.0;
+        const SHADOW_OPACITY: f32 = 0.2;
+        const SHADOW_COLOR: &str = "#000000";
 
         // Compute the bounding box of the projected print from the collected segments
-        let (min_x, max_x, min_y, max_y, min_z, max_z) = self.segments.iter().fold(
+        let (min_x, max_x, min_y, max_y) = self.segments.iter().fold(
             (
-                f32::INFINITY,
-                f32::NEG_INFINITY,
                 f32::INFINITY,
                 f32::NEG_INFINITY,
                 f32::INFINITY,
                 f32::NEG_INFINITY,
             ),
             |acc, seg| {
-                let (mut min_x, mut max_x, mut min_y, mut max_y, mut min_z, mut max_z) = acc;
+                let (mut min_x, mut max_x, mut min_y, mut max_y) = acc;
                 for p in [seg.start, seg.end] {
                     let (px, py) = project_point(p);
                     min_x = min_x.min(px);
                     max_x = max_x.max(px);
                     min_y = min_y.min(py);
                     max_y = max_y.max(py);
-                    min_z = min_z.min(p.z);
-                    max_z = max_z.max(p.z);
                 }
-                (min_x, max_x, min_y, max_y, min_z, max_z)
+                (min_x, max_x, min_y, max_y)
             },
         );
 
@@ -169,16 +166,17 @@ impl RenderThumbnailVisitor {
         svg_out.push_str("<rect width='100%' height='100%' fill='#000000'/>");
 
         // Draw the segments as lines in the SVG
-        let z_range = max_z - min_z;
         for seg in &self.segments {
             let (x1, y1) = map_to_svg(project_point(seg.start), min_x, max_y, scale, PADDING);
             let (x2, y2) = map_to_svg(project_point(seg.end), min_x, max_y, scale, PADDING);
-            let z_mid = (seg.start.z + seg.end.z) * 0.5;
-            let t = ((z_mid - min_z) / z_range).clamp(0.0, 1.0);
-            let shade = lerp(SHADE_LOW, SHADE_HIGH, t).round() as u8;
-            let stroke = format!("#{0:02x}{0:02x}{0:02x}", shade);
+
+            // Add a shadow line slightly offset from the main line, to help with depth perception.
             svg_out.push_str(&format!(
-                "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{stroke}' stroke-width='1' stroke-linecap='round'/>"
+                "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{SHADOW_COLOR}' stroke-width='{SHADOW_STROKE_SIZE}' stroke-linecap='round' stroke-opacity='{SHADOW_OPACITY}' transform='translate({SHADOW_OFFSET_X} {SHADOW_OFFSET_Y})'/>"
+            ));
+            // Main line
+            svg_out.push_str(&format!(
+                "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{MODEL_COLOR}' stroke-width='1' stroke-linecap='round'/>"
             ));
         }
 
