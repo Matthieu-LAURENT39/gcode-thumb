@@ -108,7 +108,7 @@ impl RenderThumbnailVisitor {
         }
     }
 
-    pub fn render(&self) -> DynamicImage {
+    pub fn render(&self, background: &str) -> DynamicImage {
         /// The target size for the thumbnail, in pixels.
         /// The rendered image will be a square of this size.
         const TARGET_SIZE: u32 = 512;
@@ -162,8 +162,9 @@ impl RenderThumbnailVisitor {
             TARGET_SIZE
         ));
         // Background
-        // TODO: make that configurable
-        svg_out.push_str("<rect width='100%' height='100%' fill='#000000'/>");
+        svg_out.push_str(&format!(
+            "<rect width='100%' height='100%' fill='#{background}'/>",
+        ));
 
         // Draw the segments as lines in the SVG
         for seg in &self.segments {

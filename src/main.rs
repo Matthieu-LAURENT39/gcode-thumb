@@ -7,6 +7,18 @@ use std::process::exit;
 
 mod visitors;
 
+/// Validates a hexadecimal RGB or RGBA color string.
+fn parse_color(value: &str) -> Result<String, String> {
+    let len = value.len();
+    if (len != 6 && len != 8) || !value.as_bytes().iter().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!(
+            "Invalid background color: {}. Must be a 6 or 8 digit hexadecimal RGB(A) value.",
+            value
+        ));
+    }
+    Ok(value.to_string())
+}
+
 #[derive(Parser)]
 #[command(about = "Generate thumbnails from G-code files", long_about = None)]
 struct Args {
@@ -17,29 +29,34 @@ struct Args {
     #[arg(long, short)]
     output: String,
 
-    /// Thumbnail source: embedded, generate, auto
-    /// - embedded: only use embedded thumbnails, fail if none found
-    /// - generate: only generate thumbnails from G-code, ignore embedded ones
-    /// - auto: use embedded thumbnails if found, otherwise generate from G-code
+    /// Which source to get the thumbnail from.
     #[arg(long, short, value_enum, default_value = "auto")]
     source: Source,
 
     // TODO: it'd be nice to have the positive version of this flag too, but
     // it's hard to do until https://github.com/clap-rs/clap/issues/815 is fixed
-    /// Ignore priming-line for thumbnail generation.
+    /// Don't ignore priming-line for thumbnail generation.
+    /// If this flag is not set, the priming line will be ignored when generating the thumbnail.
     #[arg(
         long = "no-ignore-priming-line",
         action = ArgAction::SetFalse,
         default_value_t = true
     )]
     ignore_priming_line: bool,
+
+    /// The background color for generated thumbnails, in hexadecimal RGB (with optional alpha).
+    #[arg(long, short, default_value = "00000000", value_parser = parse_color)]
+    background: String,
 }
 
 /// The source to control which thumbnails to use.
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum Source {
+    /// Only use embedded thumbnails, fail if none found
     Embedded,
+    /// Only generate thumbnails from G-code, ignore embedded ones
     Generate,
+    /// Use embedded thumbnails if found, otherwise generate from G-code-code
     Auto,
 }
 
@@ -91,7 +108,7 @@ fn main() {
             let mut render_visitor =
                 visitors::render_thumbnail::RenderThumbnailVisitor::new(args.ignore_priming_line);
             gcode::core::parse(&content, &mut render_visitor);
-            render_visitor.render()
+            render_visitor.render(&args.background)
         }
         Source::Auto => {
             if let Some(thumbnail) = embedded_thumbnail {
@@ -101,7 +118,7 @@ fn main() {
                     args.ignore_priming_line,
                 );
                 gcode::core::parse(&content, &mut render_visitor);
-                render_visitor.render()
+                render_visitor.render(&args.background)
             }
         }
     };
