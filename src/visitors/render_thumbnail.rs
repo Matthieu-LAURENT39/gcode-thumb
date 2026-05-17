@@ -108,10 +108,7 @@ impl RenderThumbnailVisitor {
         }
     }
 
-    pub fn render(&self, background: &str) -> DynamicImage {
-        /// The target size for the thumbnail, in pixels.
-        /// The rendered image will be a square of this size.
-        const TARGET_SIZE: u32 = 512;
+    pub fn render(&self, background: &str, size: u32) -> DynamicImage {
         /// Padding to apply around the model in the thumbnail, in pixels.
         const PADDING: f32 = 10.0;
         /// Color for the model lines.
@@ -151,15 +148,15 @@ impl RenderThumbnailVisitor {
         let height = (max_y - min_y).max(1.0);
 
         // TODO: Make that configurable
-        let scale_x = (TARGET_SIZE as f32 - 2.0 * PADDING) / width;
-        let scale_y = (TARGET_SIZE as f32 - 2.0 * PADDING) / height;
+        let scale_x = (size as f32 - 2.0 * PADDING) / width;
+        let scale_y = (size as f32 - 2.0 * PADDING) / height;
         let scale = scale_x.min(scale_y);
 
         // TODO: Not sure String is the best fit here
         let mut svg_out = String::new();
         svg_out.push_str(&format!(
             "<svg xmlns='http://www.w3.org/2000/svg' width='{0}' height='{0}' viewBox='0 0 {0} {0}'>",
-            TARGET_SIZE
+            size
         ));
         // Background
         svg_out.push_str(&format!(
@@ -189,7 +186,7 @@ impl RenderThumbnailVisitor {
         let tree =
             resvg::usvg::Tree::from_str(&svg_out, &opt).expect("Generated SVG should be valid");
 
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(TARGET_SIZE, TARGET_SIZE)
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
             .expect("Failed to create pixmap for rendering");
         resvg::render(
             &tree,

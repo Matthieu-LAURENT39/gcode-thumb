@@ -1,6 +1,6 @@
 use base64::Engine;
 use clap::{ArgAction, Parser, ValueEnum, ValueHint};
-use image::ImageReader;
+use image::{ImageReader, imageops::FilterType};
 use log::error;
 use std::fs;
 use std::process::exit;
@@ -30,8 +30,17 @@ struct Args {
     output: String,
 
     /// Which source to get the thumbnail from.
-    #[arg(long, short, value_enum, default_value = "auto")]
+    #[arg(long, value_enum, default_value = "auto")]
     source: Source,
+
+    /// The size of the thumbnail to generate, in pixels. The image will be a square of this size.
+    /// For embedded thumbnails, they will be downscaled to fit within this size if they are larger, but won't be upscaled if they are smaller.
+    #[arg(long, short, default_value_t = 512, verbatim_doc_comment)]
+    size: u32,
+
+    /// The background color for generated thumbnails, in hexadecimal RGB (with optional alpha).
+    #[arg(long, short, default_value = "00000000", value_parser = parse_color)]
+    background: String,
 
     // TODO: it'd be nice to have the positive version of this flag too, but
     // it's hard to do until https://github.com/clap-rs/clap/issues/815 is fixed
@@ -43,10 +52,6 @@ struct Args {
         default_value_t = true
     )]
     ignore_priming_line: bool,
-
-    /// The background color for generated thumbnails, in hexadecimal RGB (with optional alpha).
-    #[arg(long, short, default_value = "00000000", value_parser = parse_color)]
-    background: String,
 }
 
 /// The source to control which thumbnails to use.
@@ -67,6 +72,7 @@ fn main() {
 
     let args = Args::parse();
     let file_path = args.file;
+    let size = args.size;
     // TODO: use anyhow to handle errors instead of panicking
     let content = fs::read_to_string(&file_path).expect("Failed to read file");
 
@@ -89,7 +95,12 @@ fn main() {
             ))
             .with_guessed_format()
             .expect("Failed to guess image format");
-            reader.decode().expect("Failed to decode image")
+            let image = reader.decode().expect("Failed to decode image");
+            if image.width() > size || image.height() > size {
+                image.resize(size, size, FilterType::Triangle)
+            } else {
+                image
+            }
         })
     } else {
         None
@@ -108,7 +119,7 @@ fn main() {
             let mut render_visitor =
                 visitors::render_thumbnail::RenderThumbnailVisitor::new(args.ignore_priming_line);
             gcode::core::parse(&content, &mut render_visitor);
-            render_visitor.render(&args.background)
+            render_visitor.render(&args.background, args.size)
         }
         Source::Auto => {
             if let Some(thumbnail) = embedded_thumbnail {
@@ -118,7 +129,7 @@ fn main() {
                     args.ignore_priming_line,
                 );
                 gcode::core::parse(&content, &mut render_visitor);
-                render_visitor.render(&args.background)
+                render_visitor.render(&args.background, args.size)
             }
         }
     };
