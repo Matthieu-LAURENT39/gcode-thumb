@@ -464,3 +464,88 @@ impl<'a> CommandVisitorImpl<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RenderThumbnailVisitor;
+
+    #[test]
+    /// Checks that in absolute extrusion mode, a segment is only added when
+    /// extruding, aka when the E value increases.
+    fn test_absolute_extrusion_e_delta() {
+        // G90: absolute positioning mode
+        // M82: absolute extrusion mode
+        const GCODE: &str = r#"
+G90
+M82
+G1 X10 Y0 E1
+G1 X20 Y0 E1.5
+G1 X30 Y0 E1.1
+"#;
+
+        let mut visitor = RenderThumbnailVisitor::new(true);
+        gcode::core::parse(GCODE, &mut visitor);
+
+        assert_eq!(visitor.segments.len(), 2);
+        assert_eq!(visitor.segments[0].start.x, 0.0);
+        assert_eq!(visitor.segments[0].end.x, 10.0);
+        assert_eq!(visitor.segments[1].start.x, 10.0);
+        assert_eq!(visitor.segments[1].end.x, 20.0);
+    }
+
+    #[test]
+    /// Checks that in relative extrusion mode, a segment is only added when
+    /// extruding, aka when the E value is greater than 0.
+    fn test_relative_extrusion_e_delta() {
+        // G90: absolute positioning mode
+        // M83: relative extrusion mode
+        const GCODE: &str = r#"
+G90
+M83
+G1 X5 Y0 E1
+G1 X10 Y0 E-1
+G1 X15 Y0 E0.5
+"#;
+
+        let mut visitor = RenderThumbnailVisitor::new(true);
+        gcode::core::parse(GCODE, &mut visitor);
+
+        assert_eq!(visitor.segments.len(), 2);
+        assert_eq!(visitor.segments[0].start.x, 0.0);
+        assert_eq!(visitor.segments[0].end.x, 5.0);
+        assert_eq!(visitor.segments[1].start.x, 10.0);
+        assert_eq!(visitor.segments[1].end.x, 15.0);
+    }
+
+    #[test]
+    /// Checks that the priming line is ignored when the option is enabled, and
+    /// isn't ignored when the option is disabled.
+    fn test_ignores_priming_line() {
+        const GCODE: &str = r#"
+G1 X5 Y0 E1
+;LAYER:0
+G1 X10 Y0 E2
+"#;
+
+        // When ignoring the priming lines, only the second segment should be kept
+        {
+            let mut visitor = RenderThumbnailVisitor::new(true);
+            gcode::core::parse(GCODE, &mut visitor);
+
+            assert_eq!(visitor.segments.len(), 1);
+            assert_eq!(visitor.segments[0].start.x, 5.0);
+            assert_eq!(visitor.segments[0].end.x, 10.0);
+        }
+        // When not ignoring the priming lines, both segments should be kept
+        {
+            let mut visitor = RenderThumbnailVisitor::new(false);
+            gcode::core::parse(GCODE, &mut visitor);
+
+            assert_eq!(visitor.segments.len(), 2);
+            assert_eq!(visitor.segments[0].start.x, 0.0);
+            assert_eq!(visitor.segments[0].end.x, 5.0);
+            assert_eq!(visitor.segments[1].start.x, 5.0);
+            assert_eq!(visitor.segments[1].end.x, 10.0);
+        }
+    }
+}

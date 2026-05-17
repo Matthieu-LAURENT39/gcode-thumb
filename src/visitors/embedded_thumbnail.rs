@@ -132,3 +132,40 @@ impl BlockVisitor for BlockVisitorImpl<'_> {
 
     fn end_line(self, _span: Span) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::EmbeddedThumbnailVisitor;
+
+    #[test]
+    /// Checks that when multiple thumbnails are found, the largest one is selected.
+    /// This also checks parsing in general, mainly that unrelated comments are ignored,
+    /// and that thumbnail data is accumulated correctly.
+    fn selects_largest_thumbnail() {
+        const GCODE: &str = r#"
+; some unrelated comment
+; this should be ignored
+; thumbnail begin 32x32 10
+; data_one
+; data_two
+; thumbnail end
+; thumbnail begin 64x64 12
+; data_three
+; data_four
+; thumbnail end
+
+G1 F2400 E0
+G1 F100 X300.123 Y99.11 E0.05856
+"#;
+
+        let mut visitor = EmbeddedThumbnailVisitor::new();
+        gcode::core::parse(GCODE, &mut visitor);
+
+        let best = visitor
+            .get_best_thumbnail()
+            .expect("Thumbnail should be found");
+        assert_eq!(best.width, 64);
+        assert_eq!(best.height, 64);
+        assert_eq!(best.data, "data_threedata_four");
+    }
+}
