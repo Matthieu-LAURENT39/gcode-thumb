@@ -93,6 +93,7 @@ fn map_to_svg(point: (f32, f32), min_x: f32, max_y: f32, scale: f32, padding: f3
 }
 
 /// Parses the G-code file and renders a thumbnail from it.
+#[cfg_attr(feature = "_bench", visibility::make(pub))] // Make this available to benchmarks
 pub(crate) struct RenderThumbnailVisitor {
     diagnostics: Noop,
     state: PrinterState,
