@@ -5,6 +5,7 @@ use gcode::core::{
 };
 use image::DynamicImage;
 use log::{debug, trace};
+use tiny_skia::{Color, LineCap, Paint, PathBuilder, Pixmap, Stroke};
 
 /// Mode for interpreting coordinates
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -84,9 +85,15 @@ fn project_point(point: Point3D) -> (f32, f32) {
     (x1, -y2)
 }
 
-/// Maps a 2D point in printer coordinates to SVG coordinates, given the bounding box and scale.
+/// Maps a 2D point in printer coordinates to canvas coordinates, given the bounding box and scale.
 #[inline]
-fn map_to_svg(point: (f32, f32), min_x: f32, max_y: f32, scale: f32, padding: f32) -> (f32, f32) {
+fn map_to_canvas(
+    point: (f32, f32),
+    min_x: f32,
+    max_y: f32,
+    scale: f32,
+    padding: f32,
+) -> (f32, f32) {
     let x = (point.0 - min_x) * scale + padding;
     let y = (max_y - point.1) * scale + padding;
     (x, y)
@@ -110,11 +117,11 @@ impl RenderThumbnailVisitor {
         }
     }
 
-    pub fn render(&self, background: &str, size: u32) -> anyhow::Result<DynamicImage> {
+    pub fn render(&self, background: Color, size: u32) -> anyhow::Result<DynamicImage> {
         /// Padding to apply around the model in the thumbnail, in pixels.
         const PADDING: f32 = 10.0;
-        /// Color for the model lines.
-        const MODEL_COLOR: &str = "#ffffff";
+        // Color for the model lines.
+        let model_color: Color = Color::from_rgba8(255, 255, 255, 255);
 
         /// Shadow lines, to help with depth perception.
         /// They have an offset and a thicker stroke, and are slightly transparent.
@@ -123,7 +130,7 @@ impl RenderThumbnailVisitor {
         const SHADOW_OFFSET_Y: f32 = 5.0;
         const SHADOW_STROKE_SIZE: f32 = 1.0;
         const SHADOW_OPACITY: f32 = 0.2;
-        const SHADOW_COLOR: &str = "#000000";
+        let shadow_color: Color = Color::from_rgba8(0, 0, 0, 255);
 
         // Compute the bounding box of the projected print from the collected segments
         let (min_x, max_x, min_y, max_y) = self.segments.iter().fold(
@@ -154,52 +161,77 @@ impl RenderThumbnailVisitor {
         let scale_y = (size as f32 - 2.0 * PADDING) / height;
         let scale = scale_x.min(scale_y);
 
-        // TODO: Not sure String is the best fit here
-        let mut svg_out = String::new();
-        svg_out.push_str(&format!(
-            "<svg xmlns='http://www.w3.org/2000/svg' width='{0}' height='{0}' viewBox='0 0 {0} {0}'>",
-            size
-        ));
-        // Background
-        svg_out.push_str(&format!(
-            "<rect width='100%' height='100%' fill='#{background}'/>",
-        ));
+        let mut pixmap_out =
+            Pixmap::new(size, size).context("Failed to create pixmap for rendering")?;
 
-        // Draw the segments as lines in the SVG
+        // Background
+        pixmap_out.fill(background);
+
+        // Setup the shadow and model paint and stroke settings
+        let mut shadow_paint = Paint::default();
+        shadow_paint.set_color({
+            // Copy the shadow color but with the adjusted alpha for opacity
+            let mut c = shadow_color;
+            c.set_alpha(shadow_color.alpha() * SHADOW_OPACITY);
+            c
+        });
+        shadow_paint.anti_alias = true;
+        let shadow_stroke = Stroke {
+            width: SHADOW_STROKE_SIZE,
+            line_cap: LineCap::Round,
+            ..Default::default()
+        };
+
+        let mut model_paint = Paint::default();
+        model_paint.set_color(model_color);
+        model_paint.anti_alias = true;
+        let model_stroke = Stroke {
+            width: 1.0,
+            line_cap: LineCap::Round,
+            ..Default::default()
+        };
+
+        // Draw the segments in the pixmap
+        // TODO: could this be parallelized?
         for seg in &self.segments {
-            let (x1, y1) = map_to_svg(project_point(seg.start), min_x, max_y, scale, PADDING);
-            let (x2, y2) = map_to_svg(project_point(seg.end), min_x, max_y, scale, PADDING);
+            let (x1, y1) = map_to_canvas(project_point(seg.start), min_x, max_y, scale, PADDING);
+            let (x2, y2) = map_to_canvas(project_point(seg.end), min_x, max_y, scale, PADDING);
 
             // Add a shadow line slightly offset from the main line, to help with depth perception.
-            svg_out.push_str(&format!(
-                "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{SHADOW_COLOR}' stroke-width='{SHADOW_STROKE_SIZE}' stroke-linecap='round' stroke-opacity='{SHADOW_OPACITY}' transform='translate({SHADOW_OFFSET_X} {SHADOW_OFFSET_Y})'/>"
-            ));
+            let mut path = PathBuilder::new();
+            path.move_to(x1 + SHADOW_OFFSET_X, y1 + SHADOW_OFFSET_Y);
+            path.line_to(x2 + SHADOW_OFFSET_X, y2 + SHADOW_OFFSET_Y);
+            if let Some(path) = path.finish() {
+                pixmap_out.stroke_path(
+                    &path,
+                    &shadow_paint,
+                    &shadow_stroke,
+                    Default::default(),
+                    None,
+                );
+            }
             // Main line
-            svg_out.push_str(&format!(
-                "<line x1='{x1:.2}' y1='{y1:.2}' x2='{x2:.2}' y2='{y2:.2}' stroke='{MODEL_COLOR}' stroke-width='1' stroke-linecap='round'/>"
-            ));
+            let mut path = PathBuilder::new();
+            path.move_to(x1, y1);
+            path.line_to(x2, y2);
+            if let Some(path) = path.finish() {
+                pixmap_out.stroke_path(
+                    &path,
+                    &model_paint,
+                    &model_stroke,
+                    Default::default(),
+                    None,
+                );
+            }
         }
 
-        svg_out.push_str("</svg>");
-
-        // Render the SVG to a pixmap using resvg
-        let opt = resvg::usvg::Options::default();
-        let tree = resvg::usvg::Tree::from_str(&svg_out, &opt).context(
-            "Generated SVG is invalid. This should not happen, please report this as a bug.",
-        )?;
-
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)
-            .context("Failed to create pixmap for rendering. This should not happen, please report this as a bug.")?;
-        resvg::render(
-            &tree,
-            resvg::tiny_skia::Transform::default(),
-            &mut pixmap.as_mut(),
-        );
-
         // Convert the rendered pixmap to an image::DynamicImage
-        let image =
-            image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), pixmap.data().to_vec())
-                .context("Failed to convert pixmap to image. This should not happen, please report this as a bug.")?;
+        let image = image::RgbaImage::from_raw(
+            pixmap_out.width(),
+            pixmap_out.height(),
+            pixmap_out.data().to_vec(),
+        )
+        .context("Failed to convert pixmap to image")?;
 
         Ok(DynamicImage::ImageRgba8(image))
     }

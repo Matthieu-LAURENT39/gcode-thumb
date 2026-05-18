@@ -13,7 +13,7 @@ ere = "0.2.4"
 gcode = { version = "0.7.0", default-features = false }
 image = "0.25.10"
 log = "0.4.29"
-resvg = "0.47.0"
+tiny-skia = "0.12.0"
 visibility = "0.1.1"
 
 [dev-dependencies]

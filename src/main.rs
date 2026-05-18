@@ -1,21 +1,38 @@
 use anyhow::{Context, bail};
 use base64::Engine;
 use clap::{ArgAction, Parser, ValueEnum, ValueHint};
+use ere::{Regex, compile_regex};
 use image::{ImageReader, imageops::FilterType};
 use std::fs;
+use tiny_skia::Color;
 
 mod visitors;
 
-/// Validates a hexadecimal RGB or RGBA color string.
-fn parse_color(value: &str) -> Result<String, String> {
-    let len = value.len();
-    if (len != 6 && len != 8) || !value.as_bytes().iter().all(|byte| byte.is_ascii_hexdigit()) {
+/// Parses a hexadecimal RGB or RGBA color string.
+fn parse_color(value: &str) -> Result<Color, String> {
+    const COLOR_REGEX: Regex<3> = compile_regex!(r"^([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$");
+
+    let Some([_, Some(rgb), alpha_match]) = COLOR_REGEX.exec(value) else {
         return Err(format!(
             "Invalid background color: {}. Must be a 6 or 8 digit hexadecimal RGB(A) value.",
             value
         ));
-    }
-    Ok(value.to_string())
+    };
+
+    // This shouldn't be able to fail because the regex already validated the format,
+    // hence the use of unwraps.
+    // We could use uncheck, but the function is only called once, so we're not
+    // desperate for performances, it's not worth it
+    let r = u8::from_str_radix(&rgb[0..2], 16).unwrap();
+    let g = u8::from_str_radix(&rgb[2..4], 16).unwrap();
+    let b = u8::from_str_radix(&rgb[4..6], 16).unwrap();
+    let alpha = if let Some(alpha) = alpha_match {
+        u8::from_str_radix(alpha, 16).unwrap()
+    } else {
+        255_u8
+    };
+    // Same here, the risk of using unchecked isn't worth it
+    Ok(Color::from_rgba8(r, g, b, alpha))
 }
 
 #[derive(Parser)]
@@ -39,7 +56,7 @@ struct Args {
 
     /// The background color for generated thumbnails, in hexadecimal RGB (with optional alpha).
     #[arg(long, short, default_value = "00000000", value_parser = parse_color)]
-    background: String,
+    background: Color,
 
     // TODO: it'd be nice to have the positive version of this flag too, but
     // it's hard to do until https://github.com/clap-rs/clap/issues/815 is fixed
@@ -118,7 +135,7 @@ fn main() -> anyhow::Result<()> {
             let mut render_visitor =
                 visitors::render_thumbnail::RenderThumbnailVisitor::new(args.ignore_priming_line);
             gcode::core::parse(&content, &mut render_visitor);
-            render_visitor.render(&args.background, args.size)?
+            render_visitor.render(args.background, args.size)?
         }
         Source::Auto => {
             if let Some(thumbnail) = embedded_thumbnail {
@@ -128,7 +145,7 @@ fn main() -> anyhow::Result<()> {
                     args.ignore_priming_line,
                 );
                 gcode::core::parse(&content, &mut render_visitor);
-                render_visitor.render(&args.background, args.size)?
+                render_visitor.render(args.background, args.size)?
             }
         }
     };
