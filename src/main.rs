@@ -68,6 +68,15 @@ struct Args {
         default_value_t = true
     )]
     ignore_priming_line: bool,
+
+    /// Don't ignore skirt/brim/raft for thumbnail generation.
+    /// If this flag is not set, skirt/brim/raft lines will be ignored when generating the thumbnail.
+    #[arg(
+        long = "no-ignore-adhesion",
+        action = ArgAction::SetFalse,
+        default_value_t = true
+    )]
+    ignore_adhesion: bool,
 }
 
 /// The source to control which thumbnails to use.
@@ -132,8 +141,10 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Source::Generate => {
-            let mut render_visitor =
-                visitors::render_thumbnail::RenderThumbnailVisitor::new(args.ignore_priming_line);
+            let mut render_visitor = visitors::render_thumbnail::RenderThumbnailVisitor::new(
+                args.ignore_priming_line,
+                args.ignore_adhesion,
+            );
             gcode::core::parse(&content, &mut render_visitor);
             render_visitor.render(args.background, args.size)?
         }
@@ -143,6 +154,7 @@ fn main() -> anyhow::Result<()> {
             } else {
                 let mut render_visitor = visitors::render_thumbnail::RenderThumbnailVisitor::new(
                     args.ignore_priming_line,
+                    args.ignore_adhesion,
                 );
                 gcode::core::parse(&content, &mut render_visitor);
                 render_visitor.render(args.background, args.size)?

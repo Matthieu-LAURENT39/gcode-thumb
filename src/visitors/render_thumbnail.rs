@@ -106,14 +106,20 @@ pub(crate) struct RenderThumbnailVisitor {
     state: PrinterState,
     segments: Vec<Segment3D>,
     ignore_priming_line: bool,
+    ignore_adhesion: bool,
+    // Whether we're currently extruding adhesion helpers (skirt/brim/raft),
+    // This is determined from comments (but only if ignore_adhesion is true).
+    in_adhesion: bool,
 }
 impl RenderThumbnailVisitor {
-    pub fn new(ignore_priming_line: bool) -> Self {
+    pub fn new(ignore_priming_line: bool, ignore_adhesion: bool) -> Self {
         Self {
             diagnostics: Noop,
             state: PrinterState::default(),
             segments: Vec::new(),
             ignore_priming_line,
+            ignore_adhesion,
+            in_adhesion: false,
         }
     }
 
@@ -286,12 +292,25 @@ impl HasDiagnostics for BlockVisitorImpl<'_> {
 }
 impl BlockVisitor for BlockVisitorImpl<'_> {
     fn comment(&mut self, value: &str, _span: Span) {
+        // Remove the leading "; "
+        let comment_content = value.trim_start_matches(|c: char| c == ';' || c.is_whitespace());
+
+        // Updates the in_adhesion state
+        if self.parent.ignore_adhesion
+            && let Some(type_value) = comment_content.strip_prefix("TYPE:")
+        {
+            self.parent.in_adhesion = type_value.starts_with("SKIRT")
+                || type_value.starts_with("BRIM")
+                || type_value.starts_with("RAFT");
+            trace!(
+                "Found TYPE:{type_value}, new in_adhesion={}",
+                self.parent.in_adhesion
+            );
+        }
+
         if !self.parent.ignore_priming_line {
             return;
         }
-
-        // Remove the leading "; "
-        let comment_content = value.trim_start_matches(|c: char| c == ';' || c.is_whitespace());
 
         if comment_content == "LAYER:0" // Cura Slicer
         // Orca Slicer
@@ -403,7 +422,8 @@ impl CommandVisitor for CommandVisitorImpl<'_> {
                 state.e = apply_axis(state.e, self.args.e, state.extrusion_mode);
 
                 // Only add a segment if we're extruding
-                if extruding {
+                // If it's an adhesion move, we only add the segment if we're not ignoring adhesion
+                if extruding && !(self.parent.ignore_adhesion && self.parent.in_adhesion) {
                     self.parent.segments.push(Segment3D {
                         start: Point3D {
                             x: old.x,
@@ -515,7 +535,7 @@ G1 X20 Y0 E1.5
 G1 X30 Y0 E1.1
 "#;
 
-        let mut visitor = RenderThumbnailVisitor::new(true);
+        let mut visitor = RenderThumbnailVisitor::new(true, false);
         gcode::core::parse(GCODE, &mut visitor);
 
         assert_eq!(visitor.segments.len(), 2);
@@ -539,7 +559,7 @@ G1 X10 Y0 E-1
 G1 X15 Y0 E0.5
 "#;
 
-        let mut visitor = RenderThumbnailVisitor::new(true);
+        let mut visitor = RenderThumbnailVisitor::new(true, false);
         gcode::core::parse(GCODE, &mut visitor);
 
         assert_eq!(visitor.segments.len(), 2);
@@ -561,7 +581,7 @@ G1 X10 Y0 E2
 
         // When ignoring the priming lines, only the second segment should be kept
         {
-            let mut visitor = RenderThumbnailVisitor::new(true);
+            let mut visitor = RenderThumbnailVisitor::new(true, false);
             gcode::core::parse(GCODE, &mut visitor);
 
             assert_eq!(visitor.segments.len(), 1);
@@ -570,7 +590,7 @@ G1 X10 Y0 E2
         }
         // When not ignoring the priming lines, both segments should be kept
         {
-            let mut visitor = RenderThumbnailVisitor::new(false);
+            let mut visitor = RenderThumbnailVisitor::new(false, false);
             gcode::core::parse(GCODE, &mut visitor);
 
             assert_eq!(visitor.segments.len(), 2);
@@ -578,6 +598,47 @@ G1 X10 Y0 E2
             assert_eq!(visitor.segments[0].end.x, 5.0);
             assert_eq!(visitor.segments[1].start.x, 5.0);
             assert_eq!(visitor.segments[1].end.x, 10.0);
+        }
+    }
+
+    #[test]
+    /// Checks that adhesion moves (skirt/brim/raft) are ignored when requested.
+    fn test_ignores_adhesion_moves() {
+        let gcodes: Vec<String> = ["SKIRT", "BRIM", "RAFT"]
+            .iter()
+            .map(|type_value| {
+                format!(
+                    r#"
+G90
+M82
+;TYPE:{type_value}
+G1 X10 Y0 E1
+G1 X20 Y0 E2
+;TYPE:WALL-INNER
+G1 X30 Y0 E3
+"#
+                )
+            })
+            .collect();
+
+        // When not ignoring adhesion, all segments should be kept
+        for gcode in &gcodes {
+            let mut visitor = RenderThumbnailVisitor::new(true, false);
+            gcode::core::parse(gcode, &mut visitor);
+
+            assert_eq!(visitor.segments.len(), 3);
+            assert_eq!(visitor.segments[0].start.x, 0.0);
+            assert_eq!(visitor.segments[0].end.x, 10.0);
+        }
+
+        // When ignoring adhesion, only the wall segment should be kept
+        for gcode in &gcodes {
+            let mut visitor = RenderThumbnailVisitor::new(true, true);
+            gcode::core::parse(gcode, &mut visitor);
+
+            assert_eq!(visitor.segments.len(), 1);
+            assert_eq!(visitor.segments[0].start.x, 20.0);
+            assert_eq!(visitor.segments[0].end.x, 30.0);
         }
     }
 }

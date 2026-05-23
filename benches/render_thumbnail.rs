@@ -41,7 +41,7 @@ fn benchmark_render_thumbnail(c: &mut Criterion) {
                 &content,
                 |b, data| {
                     b.iter(|| {
-                        let mut visitor = RenderThumbnailVisitor::new(true);
+                        let mut visitor = RenderThumbnailVisitor::new(true, true);
                         gcode::core::parse(black_box(data), &mut visitor);
                         let image = visitor
                             .render(tiny_skia::Color::from_rgba8(0, 0, 0, 0), size)
