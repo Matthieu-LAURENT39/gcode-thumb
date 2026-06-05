@@ -1,0 +1,6 @@
+[Thumbnailer Entry]
+TryExec=gcode-thumb
+# This ignores embedded thumbnails so that thumbnails have a consistent look.
+# If you prefer to use embedded thumbnails when available, you can switch to '--source auto'.
+Exec=gcode-thumb %i --output %o --size %s --source generate
+MimeType=text/x.gcode;text/x-gcode;gcode;

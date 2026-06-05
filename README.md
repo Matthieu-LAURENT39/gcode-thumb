@@ -27,6 +27,12 @@ gcode-thumb my_file.gcode -o my_thumb.png --no-ignore-priming-line
 gcode-thumb my_file.gcode -o my_thumb.png --no-ignore-adhesion
 ```
 
+## Integrating with file explorers
+On Linux, most major Desktop Environments (including KDE Plasma and GNOME)'s file explorer support custom thumbnailers.  
+The standard way to integrate with them is to create a `.thumbnailer` file in `/usr/share/thumbnailers/`.  
+
+A thumbnailer file for `gcode-thumb` is included in this repository, in [`assets/gcode-thumb.thumbnailer`](./assets/gcode-thumb.thumbnailer). To install it, simply copy it to `/usr/share/thumbnailers/`.
+
 ## Benchmarks
 Benchmarks are available in the `benches` directory. They may be run with `cargo bench --features _bench`.
 
