@@ -162,10 +162,9 @@ impl RenderThumbnailVisitor {
         let width = (max_x - min_x).max(1.0);
         let height = (max_y - min_y).max(1.0);
 
-        // TODO: Make that configurable
         let scale_x = (size as f32 - 2.0 * PADDING) / width;
         let scale_y = (size as f32 - 2.0 * PADDING) / height;
-        let scale = scale_x.min(scale_y);
+        let scale = f32::min(scale_x, scale_y);
 
         let mut pixmap_out =
             Pixmap::new(size, size).context("Failed to create pixmap for rendering")?;

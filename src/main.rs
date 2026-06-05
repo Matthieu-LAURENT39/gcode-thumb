@@ -41,7 +41,7 @@ struct Args {
     /// Path to the G-code file
     #[arg(value_hint = ValueHint::FilePath)]
     file: String,
-    /// Path to save the extracted thumbnail (in PNG format)
+    /// Path to save the extracted thumbnail. Format will be inferred from the file extension.
     #[arg(long, short)]
     output: String,
 
