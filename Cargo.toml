@@ -2,6 +2,13 @@
 name = "gcode-thumb"
 version = "0.1.0"
 edition = "2024"
+description = "G-code file thumbnailer that can extract embedded thumbnails or render one from code."
+authors = ["Matthieu Laurent"]
+keywords = ["gcode", "thumbnail"]
+categories = ["command-line-utilities"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/Matthieu-LAURENT39/gcode-thumb"
 
 [dependencies]
 anyhow = "1.0.102"
