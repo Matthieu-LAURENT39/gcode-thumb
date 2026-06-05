@@ -37,3 +37,6 @@ A thumbnailer file for `gcode-thumb` is included in this repository, in [`assets
 Benchmarks are available in the `benches` directory. They may be run with `cargo bench --features _bench`.
 
 For reference, generating a thumbnail for a 3DBenchy model (~170k lines of G-code) takes around 190ms on a mid-range laptop.
+
+## License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for the full text.  
