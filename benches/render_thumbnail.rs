@@ -2,7 +2,7 @@ use std::path::Path;
 use std::{fs, hint::black_box};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use gcode_thumbnailer::RenderThumbnailVisitor;
+use gcode_thumb::RenderThumbnailVisitor;
 
 fn benchmark_render_thumbnail(c: &mut Criterion) {
     let mut group = c.benchmark_group("render_thumbnail");

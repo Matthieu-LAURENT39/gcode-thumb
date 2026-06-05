@@ -607,7 +607,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gcode-thumbnailer"
+name = "gcode-thumb"
 version = "0.1.0"
 dependencies = [
  "anyhow",
