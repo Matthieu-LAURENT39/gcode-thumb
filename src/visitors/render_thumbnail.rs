@@ -298,9 +298,11 @@ impl BlockVisitor for BlockVisitorImpl<'_> {
         if self.parent.ignore_adhesion
             && let Some(type_value) = comment_content.strip_prefix("TYPE:")
         {
-            self.parent.in_adhesion = type_value.starts_with("SKIRT")
-                || type_value.starts_with("BRIM")
-                || type_value.starts_with("RAFT");
+            // Orca Slicer doesn't use all caps for the TYPE value, but Cura does, so we do a case-insensitive check
+            let type_upper = type_value.to_ascii_uppercase();
+            self.parent.in_adhesion = type_upper.starts_with("SKIRT")
+                || type_upper.starts_with("BRIM")
+                || type_upper.starts_with("RAFT");
             trace!(
                 "Found TYPE:{type_value}, new in_adhesion={}",
                 self.parent.in_adhesion
