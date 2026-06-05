@@ -1,14 +1,11 @@
 use std::path::Path;
-use std::{fs, hint::black_box, time::Duration};
+use std::{fs, hint::black_box};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use gcode_thumbnailer::RenderThumbnailVisitor;
 
 fn benchmark_render_thumbnail(c: &mut Criterion) {
     let mut group = c.benchmark_group("render_thumbnail");
-    // Cap the sample size to avoid benchmarks taking too long.
-    // TODO: once the code is optimized, this can probably be increased.
-    group.sample_size(50);
 
     // Try against some real-world G-code files
     // It's a 3DBenchy model, so it's not the biggest print
