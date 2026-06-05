@@ -35,3 +35,13 @@ _bench = []
 name = "render_thumbnail"
 harness = false
 required-features = ["_bench"]
+
+
+[package.metadata.deb]
+license-file = "LICENSE"
+assets = [
+    # Install the binary
+    "$auto",
+    # Install the thumbnailer
+    ["assets/gcode-thumb.thumbnailer", "usr/share/thumbnailers/", "644"],
+]
